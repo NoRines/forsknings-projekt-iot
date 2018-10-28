@@ -6,11 +6,10 @@ import json
 messageTypes = {
 	"HelloMessage" : {
 		"type" : "Hello",
-		"senderIp" : "",
+		"search" : ""
 	},
 	"HelloResponseMessage" : {
-		"type" : "HelloResponse",
-		"senderIp" : "",
+		"type" : "HelloResponse"
 	},
 	"StopMessage" : {
 		"type" : "STOP"
@@ -20,6 +19,9 @@ messageTypes = {
 udp_port = 666
 multicast_ip = "192.168.0.255"
 local_ip = ''
+
+publishedChannels = ['/bla/bahoo']
+
 getThreadActive = True
 datagramReciveSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 datagramReciveSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -45,20 +47,32 @@ def getLocalIpAddress():
 	return local_ip
 
 class getThread (threading.Thread):
+	def __init__(self):
+		super().__init__()
+		self.responseList = []
+
 	def run(self):
 		while getThreadActive:
-			data, addr = datagramReciveSocket.recvfrom(1024)
-			message = json.loads(data.decode())
-			self.handleMessage(message)
+			try:
+				data, addr = datagramReciveSocket.recvfrom(1024)
+				message = json.loads(data.decode())
+				self.handleMessage(message, addr)
+			except socket.timeout:
+				datagramReciveSocket.settimeout(None)
+				print("ResponseList")
+				print(self.responseList)
+				self.responseList.clear()
 
-	def handleMessage(self, message):
+	def handleMessage(self, message, addr):
 		if message['type'] == 'Hello':
-			print(message['senderIp'])
-			print('HelloMessage recived')
-			sendHelloResponseMessage(message['senderIp'])
+			print(addr[0])
+			print(message['search'])
+			if message['search'] in publishedChannels:
+				sendHelloResponseMessage(addr[0])
 		elif message['type'] == 'HelloResponse':
-			print(message['senderIp'])
+			print(addr[0])
 			print('HelloResponseMessage recived')
+			self.responseList.append(message)
 		else:
 			pass
 
@@ -71,20 +85,20 @@ def sendMessage(message, ip):
 	datagramSendSocket.sendto(messageData.encode(), (ip, udp_port))
 	datagramSendSocket.close()
 
-def sendHelloMessage():
+def sendHelloMessage(search):
+	datagramReciveSocket.settimeout(0.5)
 	helloMessage = messageTypes['HelloMessage'].copy()
-	helloMessage['senderIp'] = getLocalIpAddress()
+	helloMessage['search'] = search
 	sendMessage(helloMessage, multicast_ip)
 
 def sendHelloResponseMessage(ip):
 	helloResponseMessage = messageTypes['HelloResponseMessage'].copy()
-	helloResponseMessage['senderIp'] = getLocalIpAddress()
 	sendMessage(helloResponseMessage, ip)
 
 thread1 = getThread()
 thread1.start()
 
-sendHelloMessage()
+sendHelloMessage("/bla/markus")
 
 time.sleep(4)
 stopGetThread()
