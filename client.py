@@ -3,6 +3,15 @@ import threading
 import time
 import json
 
+# Idea for protocol:
+#	New client broadcast to network with desierd channel as search term. Using UDP
+#	Any client on the network that maintains a channel matching the search term responds. Using UDP
+#	The new client waits for a timeout. While waiting the client will collect responses.
+#	The new client can then set up a TCP connection to one of these response clients.
+#		With the TCP connection the new client shares its public key with the response client.
+#		The response client then uses encrypts the symmetric key with the new clients public key.
+
+
 messageTypes = {
 	"HelloMessage" : {
 		"type" : "Hello",
