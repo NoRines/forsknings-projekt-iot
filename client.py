@@ -11,40 +11,116 @@ import json
 #		With the TCP connection the new client shares its public key with the response client.
 #		The response client then uses encrypts the symmetric key with the new clients public key.
 
-
 messageTypes = {
 	"HelloMessage" : {
 		"type" : "Hello",
 		"search" : ""
 	},
 	"HelloResponseMessage" : {
-		"type" : "HelloResponse"
+		"type" : "HelloResponse",
+		"ip" : ""
+	},
+	"KeyRequestMessage" : {
+		"type" : "KeyRequest",
+		"key" : ""
 	},
 	"StopMessage" : {
 		"type" : "STOP"
 	}
 }
 
+class getThreadUDP (threading.Thread):
+	def __init__(self, host, port):
+		super().__init__()
+
+		self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+		self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+		self.socket.bind((host, port))
+
+		self.active = True
+
+		self.responseList = []
+
+	def run(self):
+		while self.active:
+			try:
+				data, addr = self.socket.recvfrom(1024)
+				message = json.loads(data.decode())
+				self.handleMessage(message, addr)
+			except socket.timeout:
+				self.socket.settimeout(None)
+				print("ResponseList")
+				print(self.responseList)
+				if len(self.responseList) > 0:
+					sendKeyRequestMessage("hej", self.responseList[0]["ip"], tcp_port)
+				self.responseList.clear()
+		self.socket.close()
+
+	def handleMessage(self, message, addr):
+		if message['type'] == 'Hello':
+			print(addr[0])
+			print(message['search'])
+			if message['search'] in publishedChannels:
+				sendHelloResponseMessage(addr[0])
+		elif message['type'] == 'HelloResponse':
+			print(addr[0])
+			print('HelloResponseMessage received')
+			message["ip"] = addr[0]
+			self.responseList.append(message)
+		else:
+			pass
+
+	def stop(self):
+		self.active = False
+		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		s.sendto(json.dumps(messageTypes['StopMessage']).encode(), ('127.0.0.1', udp_port))
+		s.close()
+
+class getThreadTCP (threading.Thread):
+	def __init__(self, host, port):
+		super().__init__()
+
+		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+		self.socket.bind((host, port))
+
+		self.active = True
+
+	def run(self):
+		self.socket.listen()
+		while self.active:
+			conn, addr = self.socket.accept()
+			data = conn.recv(1024)
+			message = json.loads(data.decode())
+			self.handleMessage(message, addr, conn)
+		self.socket.close()
+
+	def handleMessage(self, message, addr, conn):
+		if message['type'] == 'KeyRequest':
+			print('Key request from: ' + addr[0])
+			print('Key: ' + message['key'])
+		else:
+			pass
+
+	def stop(self):
+		self.active = False
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect(('127.0.0.1', tcp_port))
+		s.sendall(json.dumps(messageTypes['StopMessage']).encode())
+		s.close()
+
+
 udp_port = 666
+tcp_port = 667
 multicast_ip = "192.168.0.255"
 local_ip = ''
 
 publishedChannels = ['/bla/bahoo']
 
-getThreadActive = True
-datagramReciveSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-datagramReciveSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-datagramReciveSocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-datagramReciveSocket.bind(('', udp_port))
+udpGetThread = getThreadUDP('', udp_port)
+tcpGetThread = getThreadTCP('', tcp_port)
 
-def stopGetThread():
-	global getThreadActive
-	global datagramReciveSocket
-	getThreadActive = False
-	tmpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-	tmpSocket.sendto(json.dumps(messageTypes['StopMessage']).encode(), (socket.gethostname(), udp_port))
-	tmpSocket.close()
-	datagramReciveSocket.close()
 
 def getLocalIpAddress():
 	global local_ip
@@ -55,37 +131,8 @@ def getLocalIpAddress():
 		s.close()
 	return local_ip
 
-class getThread (threading.Thread):
-	def __init__(self):
-		super().__init__()
-		self.responseList = []
-
-	def run(self):
-		while getThreadActive:
-			try:
-				data, addr = datagramReciveSocket.recvfrom(1024)
-				message = json.loads(data.decode())
-				self.handleMessage(message, addr)
-			except socket.timeout:
-				datagramReciveSocket.settimeout(None)
-				print("ResponseList")
-				print(self.responseList)
-				self.responseList.clear()
-
-	def handleMessage(self, message, addr):
-		if message['type'] == 'Hello':
-			print(addr[0])
-			print(message['search'])
-			if message['search'] in publishedChannels:
-				sendHelloResponseMessage(addr[0])
-		elif message['type'] == 'HelloResponse':
-			print(addr[0])
-			print('HelloResponseMessage recived')
-			self.responseList.append(message)
-		else:
-			pass
-
-def sendMessage(message, ip):
+# Send UDP messages
+def sendUdpMessage(message, ip, port):
 	datagramSendSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	datagramSendSocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
@@ -95,21 +142,34 @@ def sendMessage(message, ip):
 	datagramSendSocket.close()
 
 def sendHelloMessage(search):
-	datagramReciveSocket.settimeout(0.5)
+	udpGetThread.socket.settimeout(0.5)
 	helloMessage = messageTypes['HelloMessage'].copy()
 	helloMessage['search'] = search
-	sendMessage(helloMessage, multicast_ip)
+	sendUdpMessage(helloMessage, multicast_ip, udp_port)
 
 def sendHelloResponseMessage(ip):
 	helloResponseMessage = messageTypes['HelloResponseMessage'].copy()
-	sendMessage(helloResponseMessage, ip)
+	sendUdpMessage(helloResponseMessage, ip, udp_port)
 
-thread1 = getThread()
-thread1.start()
+# Send TCP messages
+def sendKeyRequestMessage(publicKey, ip, port):
+	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	s.connect((ip, port))
+	message = messageTypes['KeyRequestMessage'].copy()
+	message['key'] = publicKey
+	s.sendall(json.dumps(message).encode())
+	s.close()
 
-sendHelloMessage("/bla/markus")
+udpGetThread.start()
+tcpGetThread.start()
 
-time.sleep(4)
-stopGetThread()
+sendHelloMessage("/pi/data")
 
-thread1.join()
+time.sleep(10)
+udpGetThread.stop()
+print("Stopped udp thread")
+tcpGetThread.stop()
+print("Stopped tcp thread")
+
+udpGetThread.join()
+tcpGetThread.join()
