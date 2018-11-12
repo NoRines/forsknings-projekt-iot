@@ -3,6 +3,10 @@ import threading
 import time
 import json
 
+import crypto
+import os.path
+from Crypto.PublicKey import RSA
+
 # Idea for protocol:
 #	New client broadcast to network with desierd channel as search term. Using UDP
 #	Any client on the network that maintains a channel matching the search term responds. Using UDP
@@ -22,7 +26,6 @@ messageTypes = {
 	},
 	"KeyRequestMessage" : {
 		"type" : "KeyRequest",
-		"key" : ""
 	},
 	"StopMessage" : {
 		"type" : "STOP"
@@ -53,7 +56,8 @@ class getThreadUDP (threading.Thread):
 				print("ResponseList")
 				print(self.responseList)
 				if len(self.responseList) > 0:
-					sendKeyRequestMessage("hej", self.responseList[0]["ip"], tcp_port)
+					test = requestSymmetricKey(publicRsaKey.exportKey('PEM'), self.responseList[0]["ip"], tcp_port)
+					print(test)
 				self.responseList.clear()
 		self.socket.close()
 
@@ -99,7 +103,11 @@ class getThreadTCP (threading.Thread):
 	def handleMessage(self, message, addr, conn):
 		if message['type'] == 'KeyRequest':
 			print('Key request from: ' + addr[0])
-			print('Key: ' + message['key'])
+			data = conn.recv(1024)
+			otherKey = RSA.importKey(data)
+			response =  otherKey.encrypt(b'Halloj', 32)
+			print(len(response[0]))
+			conn.sendall(response[0])
 		else:
 			pass
 
@@ -116,11 +124,23 @@ tcp_port = 667
 multicast_ip = "192.168.0.255"
 local_ip = ''
 
-publishedChannels = ['/bla/bahoo']
+publishedChannels = ['/markus/data']
+
+def createRsaKeys(pubFilename, privateFilename):
+	if not os.path.exists(pubFilename) or not os.path.exists(privateFilename):
+		print('Creating new RSA keys.')
+		pubKey, privKey = crypto.generate_rsa_key()
+		crypto.write_key_to_file(pubKey, pubFilename)
+		crypto.write_key_to_file(privKey, privateFilename)
+
+	pubKey = crypto.read_rsa_key_from_file(pubFilename)
+	privKey = crypto.read_rsa_key_from_file(privateFilename)
+	return pubKey, privKey
+
+publicRsaKey, privateRsaKey = createRsaKeys('pub_rsa_key.pem', 'priv_rsa_key.pem')
 
 udpGetThread = getThreadUDP('', udp_port)
 tcpGetThread = getThreadTCP('', tcp_port)
-
 
 def getLocalIpAddress():
 	global local_ip
@@ -152,13 +172,20 @@ def sendHelloResponseMessage(ip):
 	sendUdpMessage(helloResponseMessage, ip, udp_port)
 
 # Send TCP messages
-def sendKeyRequestMessage(publicKey, ip, port):
+def requestSymmetricKey(publicKey, ip, port):
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	s.connect((ip, port))
+
 	message = messageTypes['KeyRequestMessage'].copy()
-	message['key'] = publicKey
+
 	s.sendall(json.dumps(message).encode())
+	s.sendall(publicKey)
+
+	data = s.recv(1024)
+	plainText = privateRsaKey.decrypt(data)
+
 	s.close()
+	return plainText
 
 udpGetThread.start()
 tcpGetThread.start()
