@@ -118,14 +118,6 @@ class getThreadTCP (threading.Thread):
 		s.sendall(json.dumps(messageTypes['StopMessage']).encode())
 		s.close()
 
-
-udp_port = 666
-tcp_port = 667
-multicast_ip = "192.168.0.255"
-local_ip = ''
-
-publishedChannels = ['/markus/data']
-
 def createRsaKeys(pubFilename, privateFilename):
 	if not os.path.exists(pubFilename) or not os.path.exists(privateFilename):
 		print('Creating new RSA keys.')
@@ -137,10 +129,6 @@ def createRsaKeys(pubFilename, privateFilename):
 	privKey = crypto.read_rsa_key_from_file(privateFilename)
 	return pubKey, privKey
 
-publicRsaKey, privateRsaKey = createRsaKeys('pub_rsa_key.pem', 'priv_rsa_key.pem')
-
-udpGetThread = getThreadUDP('', udp_port)
-tcpGetThread = getThreadTCP('', tcp_port)
 
 def getLocalIpAddress():
 	global local_ip
@@ -186,6 +174,19 @@ def requestSymmetricKey(publicKey, ip, port):
 
 	s.close()
 	return plainText
+
+
+udp_port = 666
+tcp_port = 667
+multicast_ip = "192.168.0.255"
+local_ip = ''
+
+publishedChannels = ['/markus/data']
+
+publicRsaKey, privateRsaKey = createRsaKeys('pub_rsa_key.pem', 'priv_rsa_key.pem')
+
+udpGetThread = getThreadUDP('', udp_port)
+tcpGetThread = getThreadTCP('', tcp_port)
 
 udpGetThread.start()
 tcpGetThread.start()
