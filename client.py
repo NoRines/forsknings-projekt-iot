@@ -112,7 +112,9 @@ class getThreadTCP (threading.Thread):
 			data = conn.recv(1024)
 			otherKey = RSA.importKey(data)
 			symmKey = findChannel(message['topic'])
-			response =  otherKey.encrypt(symmKey, 32)
+			response = b'None'
+			if symmKey != None:
+				response =  otherKey.encrypt(symmKey['key'], 32)
 			print(len(response[0]))
 			conn.sendall(response[0])
 		else:
