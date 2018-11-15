@@ -6,6 +6,7 @@ import json
 import crypto
 import os.path
 from Crypto.PublicKey import RSA
+import paho.mqtt.client as mqtt
 
 # Idea for protocol:
 #	New client broadcast to network with desierd channel as search term. Using UDP
@@ -22,10 +23,12 @@ messageTypes = {
 	},
 	"HelloResponseMessage" : {
 		"type" : "HelloResponse",
-		"ip" : ""
+		"ip" : "",
+		"found" : ""
 	},
 	"KeyRequestMessage" : {
 		"type" : "KeyRequest",
+		"topic" : ""
 	},
 	"StopMessage" : {
 		"type" : "STOP"
@@ -56,7 +59,7 @@ class getThreadUDP (threading.Thread):
 				print("ResponseList")
 				print(self.responseList)
 				if len(self.responseList) > 0:
-					test = requestSymmetricKey(publicRsaKey.exportKey('PEM'), self.responseList[0]["ip"], tcp_port)
+					test = requestSymmetricKey(publicRsaKey.exportKey('PEM'), self.responseList[0]['ip'], self.responseList[0]['found'], tcp_port)
 					print(test)
 				self.responseList.clear()
 		self.socket.close()
@@ -65,11 +68,13 @@ class getThreadUDP (threading.Thread):
 		if message['type'] == 'Hello':
 			print(addr[0])
 			print(message['search'])
-			if message['search'] in publishedChannels:
-				sendHelloResponseMessage(addr[0])
+			symmKey = findChannel(message['search'])
+			if symmKey != None:
+				sendHelloResponseMessage(addr[0], symmKey['topic'])
 		elif message['type'] == 'HelloResponse':
 			print(addr[0])
 			print('HelloResponseMessage received')
+			print(message['found'])
 			message["ip"] = addr[0]
 			self.responseList.append(message)
 		else:
@@ -98,6 +103,7 @@ class getThreadTCP (threading.Thread):
 			data = conn.recv(1024)
 			message = json.loads(data.decode())
 			self.handleMessage(message, addr, conn)
+			conn.close()
 		self.socket.close()
 
 	def handleMessage(self, message, addr, conn):
@@ -105,7 +111,8 @@ class getThreadTCP (threading.Thread):
 			print('Key request from: ' + addr[0])
 			data = conn.recv(1024)
 			otherKey = RSA.importKey(data)
-			response =  otherKey.encrypt(b'Halloj', 32)
+			symmKey = findChannel(message['topic'])
+			response =  otherKey.encrypt(symmKey, 32)
 			print(len(response[0]))
 			conn.sendall(response[0])
 		else:
@@ -155,16 +162,18 @@ def sendHelloMessage(search):
 	helloMessage['search'] = search
 	sendUdpMessage(helloMessage, multicast_ip, udp_port)
 
-def sendHelloResponseMessage(ip):
+def sendHelloResponseMessage(ip, found):
 	helloResponseMessage = messageTypes['HelloResponseMessage'].copy()
+	helloResponseMessage['found'] = found
 	sendUdpMessage(helloResponseMessage, ip, udp_port)
 
 # Send TCP messages
-def requestSymmetricKey(publicKey, ip, port):
+def requestSymmetricKey(publicKey, ip, topic, port):
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	s.connect((ip, port))
 
 	message = messageTypes['KeyRequestMessage'].copy()
+	message['topic'] = topic
 
 	s.sendall(json.dumps(message).encode())
 	s.sendall(publicKey)
@@ -175,13 +184,34 @@ def requestSymmetricKey(publicKey, ip, port):
 	s.close()
 	return plainText
 
+def findChannel(search):
+	for c in publishedChannels:
+		if c['topic'] == search and c['key'] != None:
+			return c
+	return None
+
+def mqttConnectCallback(client, userdata, flags, rc):
+	print("Connected to broker with code :" + str(rc))
+
+def mqttPublishCallback(client, userdata, mid):
+	print("Published data: " + str(mid))
 
 udp_port = 666
 tcp_port = 667
-multicast_ip = "192.168.0.255"
+mqtt_port = 1883
+mqtt_host = "192.168.0.103"
+multicast_ip = "255.255.255.255"
 local_ip = ''
 
-publishedChannels = ['/markus/data']
+mqttClient = mqtt.Client()
+mqttClient.on_connect = mqttConnectCallback
+mqttClient.on_publish = mqttPublishCallback
+
+publishedChannels = [
+	{'topic':'markus/data', 'key':None}
+	]
+for channel in publishedChannels:
+	channel['key'] = crypto.generate_aes_key()
 
 publicRsaKey, privateRsaKey = createRsaKeys('pub_rsa_key.pem', 'priv_rsa_key.pem')
 
@@ -191,9 +221,11 @@ tcpGetThread = getThreadTCP('', tcp_port)
 udpGetThread.start()
 tcpGetThread.start()
 
-sendHelloMessage("/pi/data")
-
+sendHelloMessage("pi3/data")
 time.sleep(10)
+
+mqttClient.connect(mqtt_host, mqtt_port, 60)
+
 udpGetThread.stop()
 print("Stopped udp thread")
 tcpGetThread.stop()
