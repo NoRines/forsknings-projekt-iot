@@ -113,6 +113,7 @@ class getThreadTCP (threading.Thread):
 			otherKey = RSA.importKey(data)
 			symmKey = findChannel(message['topic'])
 			response = b'None'
+			print(symmKey['key'])
 			if symmKey != None:
 				response =  otherKey.encrypt(symmKey['key'], 32)
 			print(len(response[0]))
@@ -201,7 +202,8 @@ def mqttPublishCallback(client, userdata, mid):
 udp_port = 666
 tcp_port = 667
 mqtt_port = 1883
-mqtt_host = "192.168.0.103"
+with open('mqtt_host.txt') as f:
+	mqtt_host = f.read().rstrip()
 multicast_ip = "255.255.255.255"
 local_ip = ''
 
