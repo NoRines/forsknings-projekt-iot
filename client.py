@@ -197,7 +197,7 @@ def messageReceiveCallback(client, userdata, msg):
 	key = findChannel(msg.topic)['key']
 	plainText = decrypt_aes_message(msg, key)
 	print(plainText)
-	if plainText == 'stop'
+	if plainText == 'stop':
 		mqttClient.disconnect()
 
 udp_port = 666
