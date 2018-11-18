@@ -193,9 +193,9 @@ def mqttPublishCallback(client, userdata, mid):
 
 def messageReceiveCallback(client, userdata, msg):
 	print()
-	print(msg)
+	print(msg.payload)
 	key = findChannel(msg.topic)['key']
-	plainText = decrypt_aes_message(msg, key)
+	plainText = decrypt_aes_message(msg.payload, key)
 	print(plainText)
 	if plainText == 'stop':
 		mqttClient.disconnect()
