@@ -59,8 +59,11 @@ class getThreadUDP (threading.Thread):
 				print("ResponseList")
 				print(self.responseList)
 				if len(self.responseList) > 0:
-					test = requestSymmetricKey(publicRsaKey.exportKey('PEM'), self.responseList[0]['ip'], self.responseList[0]['found'], tcp_port)
-					print(test)
+					symmKey = requestSymmetricKey(publicRsaKey.exportKey('PEM'), \
+						self.responseList[0]['ip'], self.responseList[0]['found'], tcp_port)
+					publishedChannels.append( \
+						{'topic' : self.responseList[0]['found'], \
+						'key' : symmKey})
 				self.responseList.clear()
 		self.socket.close()
 
@@ -113,7 +116,6 @@ class getThreadTCP (threading.Thread):
 			otherKey = RSA.importKey(data)
 			symmKey = findChannel(message['topic'])
 			response = b'None'
-			print(symmKey['key'])
 			if symmKey != None:
 				response =  otherKey.encrypt(symmKey['key'], 32)
 			print(len(response[0]))
@@ -138,16 +140,6 @@ def createRsaKeys(pubFilename, privateFilename):
 	pubKey = crypto.read_rsa_key_from_file(pubFilename)
 	privKey = crypto.read_rsa_key_from_file(privateFilename)
 	return pubKey, privKey
-
-
-def getLocalIpAddress():
-	global local_ip
-	if len(local_ip) == 0:
-		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		s.connect(("8.8.8.8", 80))
-		local_ip = s.getsockname()[0]
-		s.close()
-	return local_ip
 
 # Send UDP messages
 def sendUdpMessage(message, ip, port):
@@ -199,6 +191,15 @@ def mqttConnectCallback(client, userdata, flags, rc):
 def mqttPublishCallback(client, userdata, mid):
 	print("Published data: " + str(mid))
 
+def messageReceiveCallback(client, userdata, msg):
+	print()
+	print(msg)
+	key = findChannel(msg.topic)['key']
+	plainText = decrypt_aes_message(msg, key)
+	print(plainText)
+	if plainText == 'stop'
+		mqttClient.disconnect()
+
 udp_port = 666
 tcp_port = 667
 mqtt_port = 1883
@@ -210,6 +211,7 @@ local_ip = ''
 mqttClient = mqtt.Client()
 mqttClient.on_connect = mqttConnectCallback
 mqttClient.on_publish = mqttPublishCallback
+mqttClient.on_message = messageReceiveCallback
 
 publishedChannels = [
 	{'topic':'markus/data', 'key':None}
@@ -229,6 +231,20 @@ sendHelloMessage("pi3/data")
 time.sleep(10)
 
 mqttClient.connect(mqtt_host, mqtt_port, 60)
+
+def pubTestData(num, msg, topic):
+	key = findChannel(topic)['key']
+	mqttClient.loop_start()
+	for i in range(num):
+		payload = crypto.encrypt_aes_message(msg + str(i), key)
+		mqttClient.publish(topic, payload, 1)
+	payload = crypto.encrypt_aes_message("stop", key)
+	mqttClient.publish(topic, payload, 1)
+	mqttClient.loop_stop()
+
+def receiveTestData(topic):
+	mqttClient.subscribe(topic, 1)
+	mqttClient.loop_forever()
 
 udpGetThread.stop()
 print("Stopped udp thread")
