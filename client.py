@@ -192,13 +192,20 @@ def mqttPublishCallback(client, userdata, mid):
 	print("Published data: " + str(mid))
 
 def messageReceiveCallback(client, userdata, msg):
+	if firstMessage:
+		startTime = time.time()
+	firstMessage = False
 	print()
 	print(msg.payload)
 	key = findChannel(msg.topic)['key']
 	plainText = crypto.decrypt_aes_message(msg.payload, key)
 	print(plainText)
+	messages += 1
 	if plainText == b'stop':
 		mqttClient.disconnect()
+		endTime = time.time()
+		print('Time: ' + str(endTime - startTime))
+		print('Messages: ' + str(messages))
 
 udp_port = 666
 tcp_port = 667
@@ -212,6 +219,11 @@ mqttClient = mqtt.Client()
 mqttClient.on_connect = mqttConnectCallback
 mqttClient.on_publish = mqttPublishCallback
 mqttClient.on_message = messageReceiveCallback
+
+firstMessage = True
+startTime = 0
+endTime = 0
+messages = 0
 
 publishedChannels = [
 	{'topic':'markus/data', 'key':None}
@@ -236,7 +248,7 @@ def pubTestData(num, msg, topic):
 	key = findChannel(topic)['key']
 	mqttClient.loop_start()
 	for i in range(num):
-		payload = crypto.encrypt_aes_message(msg + str(i), key)
+		payload = crypto.encrypt_aes_message(msg + ' ' + str(i), key)
 		mqttClient.publish(topic, payload, 1)
 	payload = crypto.encrypt_aes_message("stop", key)
 	mqttClient.publish(topic, payload, 1)
