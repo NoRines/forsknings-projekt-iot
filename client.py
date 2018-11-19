@@ -247,12 +247,18 @@ mqttClient.connect(mqtt_host, mqtt_port, 60)
 def pubTestData(num, msg, topic):
 	key = findChannel(topic)['key']
 	mqttClient.loop_start()
+	pubStartTime = time.time()
 	for i in range(num):
 		payload = crypto.encrypt_aes_message(msg + ' ' + str(i), key)
 		mqttClient.publish(topic, payload, 1)
+
+	pubEndTime = time.time()
 	payload = crypto.encrypt_aes_message("stop", key)
 	mqttClient.publish(topic, payload, 1)
 	mqttClient.loop_stop()
+
+	print('Time: ' + str(pubEndTime - pubStartTime))
+	print('Messages: ' + num)
 
 def receiveTestData(topic):
 	mqttClient.subscribe(topic, 1)
